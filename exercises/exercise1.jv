@@ -15,14 +15,7 @@ pipeline AirportsPipeline {
   block AirportsTextFileInterpreter oftype TextFileInterpreter { }
 
   block AirportsCSVInterpreter oftype CSVInterpreter {
-    enclosing: '"';
-  }
-
-  block NameHeaderWriter oftype CellWriter {
-    at: cell A1;
-    write: [
-      "Name des Flughafens"
-    ];
+    delimiter: ';';
   }
 
   block AirportsTableInterpreter oftype TableInterpreter {
