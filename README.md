@@ -1,3 +1,13 @@
+# Exercise Progress
+<div align="left">
+
+[![Python](https://img.shields.io/badge/python-3.11.9-blue.svg)](https://www.python.org/downloads/release/python-3119/)
+[![Jayvee](https://img.shields.io/badge/jayvee-0.6.3-blue.svg)](https://pypi.org/project/jayvee/0.6.3/)
+
+[![Exercise Feedback](https://github.com/almdhfr/made-project-wise2425/actions/workflows/exercise-feedback.yml/badge.svg)](https://github.com/almdhfr/made-project-wise2425/actions/workflows/exercise-feedback.yml)
+![Ex1](https://img.shields.io/badge/Ex1-100%25-brightgreen)![Ex2](https://img.shields.io/badge/Ex2-100%25-brightgreen)
+</div>
+
 # Methods of Advanced Data Engineering Template Project
 
 This template project provides some structure for your open data project in the MADE module at FAU.
