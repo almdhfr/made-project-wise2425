@@ -88,7 +88,7 @@ pipeline WorldDevelopmentReportPipeline{
     block BondIssuanceTableInterpreter oftype TableInterpreter {
         header: true;
         columns: [
-        "Country Code" oftype CountryCode,
+        "Country Code" oftype CountryCodeAlpha3,
         "Bond Issuance Share" oftype bondissuanceshare,
         ];
     }
@@ -96,7 +96,7 @@ pipeline WorldDevelopmentReportPipeline{
     block GdpPerCapitaTableInterpreter oftype TableInterpreter {
         header: true;
         columns: [
-        "Country Code" oftype CountryCode,
+        "Country Code" oftype CountryCodeAlpha3,
         "GDP per Capita" oftype gdppercapita,
         ];
     }
