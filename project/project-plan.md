@@ -9,15 +9,14 @@ This project analyzes patterns and relationships between motor vehicle collision
 ## Resources
 ### 1st: Motor Vehicle Collisions - Crashes Data
 * Metadata URL: https://data.cityofnewyork.us/Public-Safety/Motor-Vehicle-Collisions-Crashes/h9gi-nx95/about_data
+* Data URL: https://data.cityofnewyork.us/resource/h9gi-nx95.csv
 * Data Type: CSV
-* Description: This dataset contains state-level monthly unemployment insurance data, including the number of unemployed individuals filing claims. 
-It provides a breakdown of unemployment trends over time, which can be used to analyze labor market fluctuations across regions.
+* Description: This dataset records NYC motor vehicle collision details, including time, location, contributing factors, and outcomes such as injuries or fatalities.
 ### 2nd: NYC Population by Community Districts
 * Metadata URL: https://data.cityofnewyork.us/City-Government/New-York-City-Population-By-Community-Districts/xi7c-iiu2/about_data
+* Data URL: https://data.cityofnewyork.us/resource/xi7c-iiu2.csv
 * Data Type: CSV
-* Description: This dataset provides data on the number of borrowers with approved debt cancellations by state. 
-The data covers the total number of approvals, giving a quantitative look at debt relief on a state-by-state basis. 
-This information will be essential for assessing economic relief efforts across regions.
+* Description: The dataset provides demographic details about NYC's population, categorized by community district, including age, race, and total population.
 ### Tools
 * Python (Pandas, Matplotlib, Seaborn, Scikit-learn)
 * Jupyter Notebook for workflow documentation
