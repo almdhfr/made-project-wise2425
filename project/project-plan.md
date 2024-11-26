@@ -24,23 +24,23 @@ This information will be essential for assessing economic relief efforts across 
 
 ## Work Packages
 
-Data Collection and Cleaning
-Issue #1: Download and clean data from both sources, ensuring consistent formats for state names/identifiers.
+#### 1. Data Collection and Cleaning
+Download and clean data from both sources, ensuring consistent formats for state names/identifiers.
 
-Exploratory Data Analysis (EDA)
-Issue #2: Perform an initial exploration to understand data distributions, identify any outliers, and prepare for correlation analysis.
+#### 2. Exploratory Data Analysis (EDA)
+Perform an initial exploration to understand data distributions, identify any outliers, and prepare for correlation analysis.
 
-Data Integration and Merging
-Issue #3: Merge datasets based on state identifiers, creating a unified dataset for analysis.
+#### 3. Data Integration and Merging
+Merge datasets based on state identifiers, creating a unified dataset for analysis.
 
-Statistical Analysis
-Issue #4: Conduct correlation and regression analyses to investigate relationships between unemployment rates and debt cancellation approvals.
+#### 4. Statistical Analysis
+Conduct correlation and regression analyses to investigate relationships between unemployment rates and debt cancellation approvals.
 
-Visualization
-Issue #5: Generate visualizations (e.g., scatter plots, heatmaps) to illustrate any patterns or trends found in the data.
+#### 5. Visualization
+Generate visualizations (e.g., scatter plots, heatmaps) to illustrate any patterns or trends found in the data.
 
-Report Findings
-Issue #6: Compile a report that summarizes the analysis, including visualizations and interpretations of the results.
+#### 6. Report Findings
+Compile a report that summarizes the analysis, including visualizations and interpretations of the results.
 
-Conclusions and Recommendations
-Issue #7: Discuss potential implications of findings and provide recommendations for policymakers.
+#### 7. Conclusions and Recommendations
+Discuss potential implications of findings and provide recommendations for policymakers.
