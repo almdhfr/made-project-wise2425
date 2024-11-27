@@ -1,33 +1,37 @@
-import os
 import pandas as pd
-import sqlite3
+import requests
+import os
+from sqlalchemy import create_engine
 
-# Create a directory to store the cleaned data
-DATA_DIR = "./data"
-os.makedirs(DATA_DIR, exist_ok=True)
 
-# URLs for the datasets
-COLLISIONS_URL = "https://data.cityofnewyork.us/resource/h9gi-nx95.csv"
-POPULATION_URL = "https://data.cityofnewyork.us/resource/xi7c-iiu2.csv"
-
-def download_data(url, filename):
+def download_data(url, save_path):
     """
-    Downloads a CSV file from a URL and saves it locally.
+    Downloads a CSV file from the given URL and saves it to the specified path.
     """
-    try:
-        print(f"Downloading data from {url}...")
-        data = pd.read_csv(url)
-        filepath = os.path.join(DATA_DIR, filename)
-        data.to_csv(filepath, index=False)
-        print(f"Saved raw data to {filepath}")
-        return data
-    except Exception as e:
-        print(f"Error downloading data: {e}")
-        return None
+    print(f"Downloading data from {url}...")
+    response = requests.get(url)
+    response.raise_for_status()
+    
+    with open(save_path, "wb") as file:
+        file.write(response.content)
+    print(f"Saved raw data to {save_path}")
+    
+    return pd.read_csv(save_path)
+
+
+def save_to_sqlite(dataframe, database_path, table_name):
+    """
+    Saves a DataFrame to an SQLite database.
+    """
+    print(f"Saving data to SQLite database: {database_path} (table: {table_name})...")
+    engine = create_engine(f"sqlite:///{database_path}")
+    dataframe.to_sql(table_name, engine, if_exists="replace", index=False)
+    print("Data saved successfully.")
+
 
 def clean_collisions_data(data):
     """
-    Cleans the Motor Vehicle Collisions dataset and adds analysis for fatalities per borough.
+    Cleans the Motor Vehicle Collisions dataset.
     """
     print("Cleaning collisions data...")
     
@@ -60,107 +64,128 @@ def clean_collisions_data(data):
     # Create a new column for total fatalities
     data['total_fatalities'] = data[fatality_columns].sum(axis=1)
     
-    print("Collisions data cleaned and fatality information added.")
+    print("Collisions data cleaned.")
     return data
 
+
 def clean_population_data(data):
-    
-    data.rename(columns={'_2010_population': 'population'}, inplace=True)
     """
-    Cleans the Population by Community District dataset.
+    Cleans the Population by Community District dataset, focusing on the 2010 population column.
     """
     print("Cleaning population data...")
     
-    # Debugging: Print column names to ensure correctness
-    print("Population data columns:", data.columns)
-    
-    # Normalize column names (lowercase and stripped of leading/trailing spaces)
+    # Normalize column names
     data.columns = data.columns.str.lower().str.strip()
     
-    # Check if 'population' column exists
-    if 'population' not in data.columns:
-        raise KeyError("'population' column is missing in the dataset. Check the dataset format.")
+    # Check if '_2010_population' column exists
+    if '_2010_population' not in data.columns:
+        raise KeyError("'_2010_population' column is missing in the dataset. Check the dataset format.")
     
-    # Drop duplicate rows
-    data = data.drop_duplicates()
+    # Rename `_2010_population` to `population` for easier handling
+    data.rename(columns={'_2010_population': 'population'}, inplace=True)
     
-    # Ensure population is numeric
+    # Ensure the population column is numeric
     data['population'] = pd.to_numeric(data['population'], errors='coerce')
     data = data.dropna(subset=['population'])  # Drop rows with invalid population values
+    
+    # Drop unnecessary columns (keep only relevant ones, like borough/community name)
+    relevant_columns = ['borough', 'population'] if 'borough' in data.columns else ['community_district', 'population']
+    data = data[relevant_columns]
     
     print("Population data cleaned.")
     return data
 
-def summarize_fatalities_by_borough(data):
+def load_street_to_borough_mapping():
     """
-    Summarizes total and average fatalities per borough.
+    Downloads and processes the street-to-borough dataset to create a mapping dictionary.
     """
-    print("Summarizing fatalities by borough...")
+    print("Loading street-to-borough mapping...")
+    url = "https://data.cityofnewyork.us/api/views/8rma-cm9c/rows.csv?accessType=DOWNLOAD"
+    save_path = "./data/raw_street_to_borough.csv"
     
-    # Group by borough and calculate total and average fatalities
-    summary = (
-        data.groupby('borough')
-        .agg(total_fatalities=('total_fatalities', 'sum'),
-             average_fatalities=('total_fatalities', 'mean'),
-             incidents=('borough', 'size'))
-        .reset_index()
-    )
+    if not os.path.exists(save_path):
+        street_data = download_data(url, save_path)
+    else:
+        street_data = pd.read_csv(save_path)
     
-    # Sort by total fatalities in descending order
-    summary = summary.sort_values(by='total_fatalities', ascending=False)
+    # Normalize column names
+    street_data.columns = street_data.columns.str.lower().str.strip()
     
-    print("Fatality summary by borough:\n", summary)
-    return summary
+    # Rename `full_stree` to `street_name` for consistency
+    if 'full_stree' in street_data.columns:
+        street_data.rename(columns={'full_stree': 'street_name'}, inplace=True)
+    else:
+        raise KeyError("Column 'full_stree' not found in the dataset.")
+    
+    # Translate `borocode` to borough names
+    borocode_to_borough = {
+        1: "Manhattan",
+        2: "Bronx",
+        3: "Brooklyn",
+        4: "Queens",
+        5: "Staten Island"
+    }
+    if 'borocode' in street_data.columns:
+        street_data['borough'] = street_data['borocode'].map(borocode_to_borough)
+    else:
+        raise KeyError("Column 'borocode' not found in the dataset.")
+    
+    # Ensure relevant columns exist
+    if 'street_name' not in street_data.columns or 'borough' not in street_data.columns:
+        raise KeyError("Expected columns 'street_name' and 'borough' not found in the dataset.")
+    
+    # Create a mapping dictionary: {street_name: borough}
+    mapping = street_data.set_index('street_name')['borough'].to_dict()
+    print("Street-to-borough mapping loaded.")
+    return mapping
 
-def save_to_sqlite(data, db_name, table_name):
+
+def detect_borough(data, street_to_borough_mapping):
     """
-    Saves the dataframe to an SQLite database.
+    Detects the borough for each row based on on_street_name and off_street_name using a provided mapping.
     """
-    db_path = os.path.join(DATA_DIR, db_name)
-    conn = sqlite3.connect(db_path)
-    try:
-        data.to_sql(table_name, conn, if_exists='replace', index=False)
-        print(f"Saved data to SQLite database: {db_path} (table: {table_name})")
-    finally:
-        conn.close()
+    print("Detecting boroughs based on street names...")
+    
+    def match_borough(row):
+        # Check on_street_name
+        if row['on_street_name'] in street_to_borough_mapping:
+            return street_to_borough_mapping[row['on_street_name']]
+        # Check off_street_name
+        if row['off_street_name'] in street_to_borough_mapping:
+            return street_to_borough_mapping[row['off_street_name']]
+        # Fallback to existing borough or mark as Unknown
+        return row['borough'] if row['borough'] != "Unknown" else "Unknown"
+    
+    # Apply the matching function row-wise
+    data['borough'] = data.apply(match_borough, axis=1)
+    print("Borough detection completed.")
+    return data
+
 
 def main():
-    # Download datasets
-    collisions_data = download_data(COLLISIONS_URL, "raw_collisions.csv")
-    population_data = download_data(POPULATION_URL, "raw_population.csv")
-
-    # Process collisions data
-    if collisions_data is not None:
-        cleaned_collisions = clean_collisions_data(collisions_data)
-        save_to_sqlite(cleaned_collisions, "collisions.db", "collisions")
-        
-        # Summarize fatalities by borough
-        fatality_summary = summarize_fatalities_by_borough(cleaned_collisions)
-        summary_path = os.path.join(DATA_DIR, "fatality_summary.csv")
-        fatality_summary.to_csv(summary_path, index=False)
-        print(f"Fatality summary saved to {summary_path}")
-
-    # Process population data
-    if population_data is not None:
-        cleaned_population = clean_population_data(population_data)
-        save_to_sqlite(cleaned_population, "population.db", "population")
-        
-        # Join population data with fatality summary
-        print("Merging population data with fatality summary...")
-        cleaned_population.rename(columns={'borough': 'borough_name'}, inplace=True)
-        merged_data = pd.merge(
-            fatality_summary,
-            cleaned_population,
-            left_on='borough',
-            right_on='borough_name',
-            how='inner'
-        )
-        merged_data['fatalities_per_100k'] = (merged_data['total_fatalities'] / merged_data['population']) * 100000
-        
-        # Save merged data
-        merged_path = os.path.join(DATA_DIR, "merged_fatalities_population.csv")
-        merged_data.to_csv(merged_path, index=False)
-        print(f"Merged data saved to {merged_path}")
+    # Load collision data
+    collisions_data = download_data(
+        "https://data.cityofnewyork.us/resource/h9gi-nx95.csv", "./data/raw_collisions.csv"
+    )
+    
+    # Load population data
+    population_data = download_data(
+        "https://data.cityofnewyork.us/resource/xi7c-iiu2.csv", "./data/raw_population.csv"
+    )
+    
+    # Load street-to-borough mapping
+    street_to_borough_mapping = load_street_to_borough_mapping()
+    
+    # Clean collision data and detect boroughs
+    cleaned_collisions = clean_collisions_data(collisions_data)
+    cleaned_collisions = detect_borough(cleaned_collisions, street_to_borough_mapping)
+    
+    # Clean population data
+    cleaned_population = clean_population_data(population_data)
+    
+    # Save cleaned data
+    save_to_sqlite(cleaned_collisions, "./data/collisions.db", "collisions")
+    save_to_sqlite(cleaned_population, "./data/population.db", "population")
 
 if __name__ == "__main__":
     main()
