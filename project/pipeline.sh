@@ -1,2 +1,2 @@
 #!/bin/bash
-python /MADEProject/pipeline.py
+python /pipeline.py
