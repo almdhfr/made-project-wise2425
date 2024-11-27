@@ -17,6 +17,11 @@ This project analyzes patterns and relationships between motor vehicle collision
 * Data URL: https://data.cityofnewyork.us/resource/xi7c-iiu2.csv
 * Data Type: CSV
 * Description: The dataset provides demographic details about NYC's population, categorized by community district, including age, race, and total population.
+### 3rd: NYC Roads
+* Metadata URL: https://data.cityofnewyork.us/City-Government/road/svwp-sbcd
+* Data URL: https://data.cityofnewyork.us/api/views/8rma-cm9c/rows.csv?accessType=DOWNLOAD
+* Data Type: CSV
+* Description: The dataset provides geographic details about NYC's roads, categorized by community district.
 ### Tools
 * Python (Pandas, Matplotlib, Seaborn, Scikit-learn)
 * Jupyter Notebook for workflow documentation
