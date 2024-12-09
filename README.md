@@ -5,7 +5,7 @@
 [![Jayvee](https://img.shields.io/badge/jayvee-0.6.4-blue.svg)](https://pypi.org/project/jayvee/0.6.4/)
 
 [![Exercise Feedback](https://github.com/almdhfr/made-project-wise2425/actions/workflows/exercise-feedback.yml/badge.svg)](https://github.com/almdhfr/made-project-wise2425/actions/workflows/exercise-feedback.yml)
-![Ex1](https://img.shields.io/badge/Ex1-100%25-brightgreen)![Ex2](https://img.shields.io/badge/Ex2-100%25-brightgreen)![Ex2](https://img.shields.io/badge/Ex3-90%25-green)
+![Ex1](https://img.shields.io/badge/Ex1-100%25-brightgreen)![Ex2](https://img.shields.io/badge/Ex2-100%25-brightgreen)![Ex3](https://img.shields.io/badge/Ex3-90%25-green)![Ex4](https://img.shields.io/badge/Ex4-100%25-brightgreen)
 </div>
 
 # Methods of Advanced Data Engineering Template Project
