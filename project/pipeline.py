@@ -49,29 +49,60 @@ def save_to_sqlite(dataframe, database_path, table_name):
         logging.error(f"Error saving data to SQLite: {e}")
         raise
 
+
 def clean_collisions_data(data):
     """
     Cleans the Motor Vehicle Collisions dataset.
     """
     logging.info("Cleaning collisions data...")
+
+    # Drop duplicate rows
     data = data.drop_duplicates()
+
+    # Handle missing borough data
     data['borough'] = data['borough'].fillna("Unknown")
+
+    # Convert date columns to datetime
     data['crash_date'] = pd.to_datetime(data['crash_date'], errors='coerce')
     data['crash_time'] = pd.to_datetime(data['crash_time'], format='%H:%M', errors='coerce').dt.time
+
+    # Filter out rows with invalid dates
     data = data.dropna(subset=['crash_date'])
 
-    fatality_columns = [
-        'number_of_persons_killed',
-        'number_of_pedestrians_killed',
-        'number_of_cyclist_killed',
-        'number_of_motorist_killed'
-    ]
+    # Drop unwanted columns
+    columns_to_drop = [
+                          'crash_date', 'crash_time', 'latitude', 'longitude', 'location', 'collision_id'
+                      ] + [col for col in data.columns if "vehicle" in col and col != "vehicle_type_code1"]
+    data = data.drop(columns=columns_to_drop, errors='ignore')
+
+    # Rename 'vehicle_type_code1' to 'vehicle_type'
+    if 'vehicle_type_code1' in data.columns:
+        data.rename(columns={'vehicle_type_code1': 'vehicle_type'}, inplace=True)
+
+    # Identify fatality-related columns dynamically
+    fatality_columns = [col for col in data.columns if 'killed' in col.lower()]
+    if not fatality_columns:
+        raise KeyError("No columns with 'killed' found in the dataset.")
+
+    # Convert fatality columns to numeric and handle missing values
     for col in fatality_columns:
-        if col in data.columns:
-            data[col] = data[col].fillna(0).astype(int)
-        else:
-            logging.warning(f"Column {col} is missing in the dataset.")
+        data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(int)
+
+    # Create a new column for total injuries
     data['total_fatalities'] = data[fatality_columns].sum(axis=1)
+
+    # Identify injury-related columns dynamically
+    injury_columns = [col for col in data.columns if 'injured' in col.lower()]
+    if not injury_columns:
+        raise KeyError("No columns with 'injured' found in the dataset.")
+
+    # Convert injury columns to numeric and handle missing values
+    for col in injury_columns:
+        data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(int)
+
+    # Create a new column for total injuries
+    data['total_injuries'] = data[injury_columns].sum(axis=1)
+
     logging.info("Collisions data cleaned.")
     return data
 
@@ -91,6 +122,33 @@ def clean_population_data(data):
     logging.info("Population data cleaned.")
     return data
 
+def detect_borough(data, street_to_borough_mapping):
+    """
+    Detects the borough for rows with 'Unknown' boroughs using street names.
+    Priority order: on_street_name > off_street_name > cross_street_name.
+    """
+    logging.info("Detecting boroughs based on street names...")
+
+    def match_borough(row):
+        # Check on_street_name
+        if row['on_street_name'] in street_to_borough_mapping:
+            return street_to_borough_mapping[row['on_street_name']]
+        # Check off_street_name
+        if row['off_street_name'] in street_to_borough_mapping:
+            return street_to_borough_mapping[row['off_street_name']]
+        # Check cross_street_name
+        if row['cross_street_name'] in street_to_borough_mapping:
+            return street_to_borough_mapping[row['cross_street_name']]
+        # Fallback to existing borough or mark as Unknown
+        return row['borough'] if row['borough'] != "Unknown" else "Unknown"
+
+    # Apply matching logic only to rows with 'Unknown' boroughs
+    mask = data['borough'] == "Unknown"
+    data.loc[mask, 'borough'] = data[mask].apply(match_borough, axis=1)
+
+    logging.info("Borough detection completed.")
+    return data
+
 def load_street_to_borough_mapping():
     """
     Downloads and processes the street-to-borough dataset to create a mapping dictionary.
@@ -98,26 +156,37 @@ def load_street_to_borough_mapping():
     logging.info("Loading street-to-borough mapping...")
     save_path = os.path.join(DATA_DIR, "raw_street_to_borough.csv")
     street_data = download_data(STREET_MAPPING_URL, save_path)
-    street_data.columns = street_data.columns.str.lower().str.strip()
-    street_data.rename(columns={'full_stree': 'street_name'}, inplace=True)
-    borocode_to_borough = {
-        1: "Manhattan", 2: "Bronx", 3: "Brooklyn", 4: "Queens", 5: "Staten Island"
-    }
-    street_data['borough'] = street_data['borocode'].map(borocode_to_borough)
-    mapping = street_data.set_index('street_name')['borough'].to_dict()
-    logging.info("Street-to-borough mapping loaded.")
-    return mapping
 
-def detect_borough(data, street_to_borough_mapping):
-    """
-    Detects the borough for each row based on street names.
-    """
-    logging.info("Detecting boroughs based on street names...")
-    on_street_boroughs = data['on_street_name'].map(street_to_borough_mapping)
-    off_street_boroughs = data['off_street_name'].map(street_to_borough_mapping)
-    data['borough'] = on_street_boroughs.fillna(off_street_boroughs).fillna(data['borough'])
-    logging.info("Borough detection completed.")
-    return data
+    # Normalize column names
+    street_data.columns = street_data.columns.str.lower().str.strip()
+
+    # Rename relevant columns for clarity
+    if 'full_stree' in street_data.columns:
+        street_data.rename(columns={'full_stree': 'street_name'}, inplace=True)
+    else:
+        raise KeyError("Column 'full_stree' not found in the dataset.")
+
+    # Translate borocode to borough names
+    borocode_to_borough = {
+        1: "Manhattan",
+        2: "Bronx",
+        3: "Brooklyn",
+        4: "Queens",
+        5: "Staten Island"
+    }
+    if 'borocode' in street_data.columns:
+        street_data['borough'] = street_data['borocode'].map(borocode_to_borough)
+    else:
+        raise KeyError("Column 'borocode' not found in the dataset.")
+
+    # Ensure relevant columns exist
+    if 'street_name' not in street_data.columns or 'borough' not in street_data.columns:
+        raise KeyError("Expected columns 'street_name' and 'borough' not found in the dataset.")
+
+    # Create a mapping dictionary: {street_name: borough}
+    mapping = street_data.set_index('street_name')['borough'].to_dict()
+    logging.info("Street-to-borough mapping loaded successfully.")
+    return mapping
 
 def parallel_download():
     """
