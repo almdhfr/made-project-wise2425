@@ -1,6 +1,8 @@
 import pandas as pd
 import requests
 import os
+import zipfile
+import io
 from sqlalchemy import create_engine
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -12,15 +14,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 COLLISION_URL = os.getenv("COLLISION_URL", "https://data.cityofnewyork.us/resource/h9gi-nx95.csv")
 POPULATION_URL = os.getenv("POPULATION_URL", "https://data.cityofnewyork.us/resource/xi7c-iiu2.csv")
-STREET_MAPPING_URL = os.getenv(
-    "STREET_MAPPING_URL",
-    "https://data.cityofnewyork.us/api/views/8rma-cm9c/rows.csv?accessType=DOWNLOAD"
-)
+STREET_ZIP_URL = "https://data.cityofnewyork.us/download/w4v2-rv6b/application%2Fzip"
+STREET_FILENAME = "bobaadr.txt"
 
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
 
-def download_data(url, save_path, dtype=None):
+def download_data(url, save_path):
     """
     Downloads a CSV file from the given URL and saves it to the specified path.
     """
@@ -31,10 +31,41 @@ def download_data(url, save_path, dtype=None):
         with open(save_path, "wb") as file:
             file.write(response.content)
         logging.info(f"Saved raw data to {save_path}")
-        return pd.read_csv(save_path, dtype=dtype, low_memory=False)
+        return pd.read_csv(save_path)
     except Exception as e:
         logging.error(f"Failed to download data from {url}: {e}")
         raise
+
+
+def download_and_extract_zip(zip_url, extract_filename, save_path):
+    """
+    Downloads a ZIP file, extracts a specific file, and saves it to the specified path.
+    Handles nested directory structures within the ZIP file.
+    """
+    try:
+        logging.info(f"Downloading ZIP file from {zip_url}...")
+        response = requests.get(zip_url, timeout=10)
+        response.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            # Look for the target file in the ZIP archive
+            target_file = None
+            for file_name in zf.namelist():
+                if file_name.endswith(extract_filename):
+                    target_file = file_name
+                    break
+
+            if not target_file:
+                raise FileNotFoundError(f"{extract_filename} not found in the ZIP archive.")
+
+            # Extract and save the file
+            with zf.open(target_file) as file:
+                with open(save_path, "wb") as output_file:
+                    output_file.write(file.read())
+        logging.info(f"Extracted {target_file} to {save_path}")
+    except Exception as e:
+        logging.error(f"Failed to download or extract {extract_filename}: {e}")
+        raise
+
 
 def save_to_sqlite(dataframe, database_path, table_name):
     """
@@ -115,76 +146,92 @@ def clean_population_data(data):
     if '_2010_population' not in data.columns:
         raise KeyError("'_2010_population' column is missing in the dataset.")
     data.rename(columns={'_2010_population': 'population'}, inplace=True)
-    data['population'] = pd.to_numeric(data['population'], errors='coerce')
-    data = data.dropna(subset=['population'])
-    relevant_columns = ['borough', 'population'] if 'borough' in data.columns else ['community_district', 'population']
-    data = data[relevant_columns]
-    logging.info("Population data cleaned.")
+    # Ensure the population column is numeric
+    data['population'] = pd.to_numeric(data['population'], errors='coerce').fillna(0).astype(int)
+    # Group by borough and aggregate population
+    if 'borough' in data.columns:
+        data = data.groupby('borough', as_index=False)['population'].sum()
+    else:
+        raise KeyError("'borough' column is missing in the dataset. Cannot aggregate by borough.")
+    # Rename the aggregated column to 'total_population' for clarity
+    data.rename(columns={'population': 'total_population'}, inplace=True)
+    logging.info("Population data aggregated by borough.")
     return data
 
-def detect_borough(data, street_to_borough_mapping):
-    """
-    Detects the borough for rows with 'Unknown' boroughs using street names.
-    Priority order: on_street_name > off_street_name > cross_street_name.
-    """
-    logging.info("Detecting boroughs based on street names...")
 
+def integrate_street_names(data, street_mapping):
+    """
+    Integrates street names from the collisions dataset with the bobaadr.txt mapping.
+    Updates the borough column for unknown entries based on matching street names.
+    """
+    logging.info("Integrating street names with bobaadr.txt mapping...")
+
+    # Define a function to match street names
     def match_borough(row):
-        # Check on_street_name
-        if row['on_street_name'] in street_to_borough_mapping:
-            return street_to_borough_mapping[row['on_street_name']]
-        # Check off_street_name
-        if row['off_street_name'] in street_to_borough_mapping:
-            return street_to_borough_mapping[row['off_street_name']]
-        # Check cross_street_name
-        if row['cross_street_name'] in street_to_borough_mapping:
-            return street_to_borough_mapping[row['cross_street_name']]
-        # Fallback to existing borough or mark as Unknown
-        return row['borough'] if row['borough'] != "Unknown" else "Unknown"
+        if row['on_street_name'] in street_mapping:
+            return street_mapping[row['on_street_name']]
+        if row['off_street_name'] in street_mapping:
+            return street_mapping[row['off_street_name']]
+        if row['cross_street_name'] in street_mapping:
+            return street_mapping[row['cross_street_name']]
+        return row['borough']
 
-    # Apply matching logic only to rows with 'Unknown' boroughs
-    mask = data['borough'] == "Unknown"
-    data.loc[mask, 'borough'] = data[mask].apply(match_borough, axis=1)
+    # Apply initial matching logic
+    data['borough'] = data.apply(match_borough, axis=1)
 
-    logging.info("Borough detection completed.")
+    # Handle "Unknown" boroughs iteratively
+    logging.info("Resolving 'Unknown' boroughs based on connected street names...")
+    while "Unknown" in data['borough'].values:
+        unknown_mask = data['borough'] == "Unknown"
+        for index, row in data[unknown_mask].iterrows():
+            # Find all rows with valid boroughs that share a street name
+            matching_boroughs = data[
+                (data['on_street_name'] == row['on_street_name']) |
+                (data['off_street_name'] == row['off_street_name']) |
+                (data['cross_street_name'] == row['cross_street_name'])
+            ]['borough'].unique()
+
+            # Exclude "Unknown" from matches
+            matching_boroughs = [b for b in matching_boroughs if b != "Unknown"]
+
+            # If a unique borough is found, update the "Unknown" value
+            if len(matching_boroughs) == 1:
+                data.at[index, 'borough'] = matching_boroughs[0]
+
+        # If no changes occur, break the loop
+        if not unknown_mask.any():
+            break
+
+    logging.info("Street name integration completed.")
     return data
 
-def load_street_to_borough_mapping():
+
+def load_street_to_borough_mapping(txt_path):
     """
-    Downloads and processes the street-to-borough dataset to create a mapping dictionary.
+    Load and process bobaadr.txt data to create a mapping of street names to boroughs.
     """
-    logging.info("Loading street-to-borough mapping...")
-    save_path = os.path.join(DATA_DIR, "raw_street_to_borough.csv")
-    street_data = download_data(STREET_MAPPING_URL, save_path)
+    logging.info("Loading street-to-borough mapping from bobaadr.txt...")
+    data = pd.read_csv(txt_path, delimiter=',', dtype=str)
 
     # Normalize column names
-    street_data.columns = street_data.columns.str.lower().str.strip()
+    data.columns = data.columns.str.lower().str.strip()
 
-    # Rename relevant columns for clarity
-    if 'full_stree' in street_data.columns:
-        street_data.rename(columns={'full_stree': 'street_name'}, inplace=True)
-    else:
-        raise KeyError("Column 'full_stree' not found in the dataset.")
+    # Ensure required columns exist
+    if 'boro' not in data.columns or 'stname' not in data.columns:
+        raise KeyError("Columns 'boro' and 'stname' are required in the file.")
 
-    # Translate borocode to borough names
+    # Map borough codes to borough names
     borocode_to_borough = {
-        1: "Manhattan",
-        2: "Bronx",
-        3: "Brooklyn",
-        4: "Queens",
-        5: "Staten Island"
+        "1": "Manhattan",
+        "2": "Bronx",
+        "3": "Brooklyn",
+        "4": "Queens",
+        "5": "Staten Island"
     }
-    if 'borocode' in street_data.columns:
-        street_data['borough'] = street_data['borocode'].map(borocode_to_borough)
-    else:
-        raise KeyError("Column 'borocode' not found in the dataset.")
+    data['borough'] = data['boro'].map(borocode_to_borough)
 
-    # Ensure relevant columns exist
-    if 'street_name' not in street_data.columns or 'borough' not in street_data.columns:
-        raise KeyError("Expected columns 'street_name' and 'borough' not found in the dataset.")
-
-    # Create a mapping dictionary: {street_name: borough}
-    mapping = street_data.set_index('street_name')['borough'].to_dict()
+    # Create a mapping of street names to boroughs
+    mapping = data.set_index('stname')['borough'].to_dict()
     logging.info("Street-to-borough mapping loaded successfully.")
     return mapping
 
@@ -192,7 +239,7 @@ def parallel_download():
     """
     Downloads all datasets in parallel.
     """
-    urls = [COLLISION_URL, POPULATION_URL, STREET_MAPPING_URL]
+    urls = [COLLISION_URL, POPULATION_URL, STREET_ZIP_URL]
     save_paths = [
         os.path.join(DATA_DIR, "raw_collisions.csv"),
         os.path.join(DATA_DIR, "raw_population.csv"),
@@ -201,19 +248,30 @@ def parallel_download():
     with ThreadPoolExecutor() as executor:
         executor.map(lambda args: download_data(*args), zip(urls, save_paths))
 
+
 def main():
-    parallel_download()
-    collisions_data = pd.read_csv(os.path.join(DATA_DIR, "raw_collisions.csv"))
-    population_data = pd.read_csv(os.path.join(DATA_DIR, "raw_population.csv"))
-    street_to_borough_mapping = load_street_to_borough_mapping()
+    # Download collisions data
+    collisions_data = download_data(COLLISION_URL, os.path.join(DATA_DIR, "raw_collisions.csv"))
 
+    # Download and extract bobaadr.txt
+    street_txt_path = os.path.join(DATA_DIR, STREET_FILENAME)
+    download_and_extract_zip(STREET_ZIP_URL, STREET_FILENAME, street_txt_path)
+
+    # Load street-to-borough mapping
+    street_mapping = load_street_to_borough_mapping(street_txt_path)
+
+    # Clean and process collisions data
     cleaned_collisions = clean_collisions_data(collisions_data)
-    cleaned_collisions = detect_borough(cleaned_collisions, street_to_borough_mapping)
+    cleaned_collisions = integrate_street_names(cleaned_collisions, street_mapping)
 
+    # Download and process population data
+    population_data = download_data(POPULATION_URL, os.path.join(DATA_DIR, "raw_population.csv"))
     cleaned_population = clean_population_data(population_data)
 
+    # Save cleaned data
     save_to_sqlite(cleaned_collisions, os.path.join(DATA_DIR, "collisions.db"), "collisions")
     save_to_sqlite(cleaned_population, os.path.join(DATA_DIR, "population.db"), "population")
+
 
 if __name__ == "__main__":
     main()
