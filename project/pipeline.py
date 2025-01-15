@@ -293,15 +293,24 @@ def combine_databases():
             "total_injuries": 0
         }, inplace=True)
 
+        # Avoid division by zero by setting a minimum population of 1 for percentage calculations
+        combined_df['total_population'] = combined_df['total_population'].replace(0, 1)
+             
+        # Caluclate incident risk percentages
+        combined_df["incidents_risk_percentage"] = (
+                (combined_df["total_incidents"] / combined_df["total_population"])*100
+        ).fillna(0)  # Handle division by zero
+
         # Calculate risk percentages
         combined_df["fatality_risk_percentage"] = (
-                (combined_df["total_fatalities"] / combined_df["total_incidents"]) * 100
+                (combined_df["total_fatalities"] / combined_df["total_incidents"])
         ).fillna(0)  # Handle division by zero
         combined_df["injury_risk_percentage"] = (
-                (combined_df["total_injuries"] / combined_df["total_incidents"]) * 100
+                (combined_df["total_injuries"] / combined_df["total_incidents"])
         ).fillna(0)  # Handle division by zero
 
         # Format percentages to 2 decimal places
+        combined_df['incidents_risk_percentage'] = combined_df['incidents_risk_percentage'].round(2)
         combined_df['fatality_risk_percentage'] = combined_df['fatality_risk_percentage'].round(2)
         combined_df['injury_risk_percentage'] = combined_df['injury_risk_percentage'].round(2)
 
