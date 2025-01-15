@@ -1,5 +1,6 @@
 import os
 import unittest
+import logging
 import sqlite3
 from project.pipeline import main, DATA_DIR
 
