@@ -174,6 +174,28 @@ class TestPipeline(unittest.TestCase):
                 f"The following boroughs are missing in the population table: {missing_boroughs}"
             )
 
+    def test_combined_table_structure_and_risk_columns(self):
+        """
+        Test that the combined table has the expected structure, including risk percentage columns.
+        """
+        combined_db_path = os.path.join(DATA_DIR, "combined_data.db")
+        with sqlite3.connect(combined_db_path) as conn:
+            cursor = conn.cursor()
+    
+            # Check table existence
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='joined_data';")
+            self.assertIsNotNone(cursor.fetchone(), "Table 'joined_data' does not exist in combined_data.db")
+    
+            # Check column existence
+            expected_columns = [
+                "borough", "total_population", "total_fatalities",
+                "total_injuries", "total_incidents",
+                "fatality_risk_percentage", "injury_risk_percentage"
+            ]
+            cursor.execute("PRAGMA table_info(joined_data);")
+            columns = [info[1] for info in cursor.fetchall()]
+            for column in expected_columns:
+                self.assertIn(column, columns, f"Missing column '{column}' in 'joined_data' table")
 
 if __name__ == "__main__":
     unittest.main()
