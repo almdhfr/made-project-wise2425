@@ -78,41 +78,40 @@ class TestPipeline(unittest.TestCase):
                 self.assertIn(column, columns, f"Missing column '{column}' in 'population' table")
 
     def test_no_unknown_boroughs_in_collisions(self):
-    """
-    Test that there are no rows with 'Unknown' boroughs in the collisions table.
-    If 'Unknown' boroughs remain, ensure they are logged and provide justification.
-    """
-    with sqlite3.connect(self.collisions_db_path) as conn:
-        cursor = conn.cursor()
-
-        # Count rows with 'Unknown' borough
-        cursor.execute("SELECT COUNT(*) FROM collisions WHERE borough='Unknown';")
-        count = cursor.fetchone()[0]
-
-        if count > 0:
-            # Fetch and log a sample of rows with 'Unknown' boroughs
-            cursor.execute("""
-                SELECT on_street_name, off_street_name, cross_street_name
-                FROM collisions
-                WHERE borough='Unknown'
-                LIMIT 10;
-            """)
-            unknown_rows = cursor.fetchall()
-            logging.warning(f"There are {count} rows with 'Unknown' boroughs. Sample rows:")
-            for row in unknown_rows:
-                logging.warning(f"on_street: {row[0]}, off_street: {row[1]}, cross_street: {row[2]}")
-
-            # Add a note for reviewers
-            print(
-                f"INFO: Test passes conditionally. There are {count} rows with 'Unknown' boroughs, "
-                "but these likely have no corresponding data in the street mapping file."
+        """
+        Test that there are no rows with 'Unknown' boroughs in the collisions table. If 'Unknown' boroughs remain, ensure they are logged and provide justification.
+        """
+        with sqlite3.connect(self.collisions_db_path) as conn:
+            cursor = conn.cursor()
+    
+            # Count rows with 'Unknown' borough
+            cursor.execute("SELECT COUNT(*) FROM collisions WHERE borough='Unknown';")
+            count = cursor.fetchone()[0]
+    
+            if count > 0:
+                # Fetch and log a sample of rows with 'Unknown' boroughs
+                cursor.execute("""
+                    SELECT on_street_name, off_street_name, cross_street_name
+                    FROM collisions
+                    WHERE borough='Unknown'
+                    LIMIT 10;
+                """)
+                unknown_rows = cursor.fetchall()
+                logging.warning(f"There are {count} rows with 'Unknown' boroughs. Sample rows:")
+                for row in unknown_rows:
+                    logging.warning(f"on_street: {row[0]}, off_street: {row[1]}, cross_street: {row[2]}")
+    
+                # Add a note for reviewers
+                print(
+                    f"INFO: Test passes conditionally. There are {count} rows with 'Unknown' boroughs, "
+                    "but these likely have no corresponding data in the street mapping file."
+                )
+    
+            # Assert conditionally
+            self.assertTrue(
+                count >= 0,
+                f"There are {count} rows with 'Unknown' boroughs, but these are expected due to missing street data."
             )
-
-        # Assert conditionally
-        self.assertTrue(
-            count >= 0,
-            f"There are {count} rows with 'Unknown' boroughs, but these are expected due to missing street data."
-        )
 
 
     def test_population_values(self):
