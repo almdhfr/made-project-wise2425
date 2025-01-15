@@ -93,6 +93,9 @@ def clean_collisions_data(data):
     # Handle missing borough data
     data['borough'] = data['borough'].fillna("Unknown")
 
+    # Convert borough names to title case
+    data['borough'] = data['borough'].str.title()
+
     # Convert date columns to datetime
     data['crash_date'] = pd.to_datetime(data['crash_date'], errors='coerce')
     data['crash_time'] = pd.to_datetime(data['crash_time'], format='%H:%M', errors='coerce').dt.time
@@ -143,6 +146,8 @@ def clean_population_data(data):
     """
     logging.info("Cleaning population data...")
     data.columns = data.columns.str.lower().str.strip()
+    # Convert borough names to title case
+    data['borough'] = data['borough'].str.title()
     if '_2010_population' not in data.columns:
         raise KeyError("'_2010_population' column is missing in the dataset.")
     data.rename(columns={'_2010_population': 'population'}, inplace=True)
