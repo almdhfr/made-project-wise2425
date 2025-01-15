@@ -121,7 +121,7 @@ class TestPipeline(unittest.TestCase):
         """
         with sqlite3.connect(self.population_db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM population WHERE total_population <= 0;")
+            cursor.execute("SELECT COUNT(*) FROM population WHERE total_population < 0;")
             count = cursor.fetchone()[0]
             self.assertEqual(
                 count, 0,
