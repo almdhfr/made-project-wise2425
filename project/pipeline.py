@@ -158,67 +158,15 @@ def clean_population_data(data):
     logging.info("Population data aggregated by borough.")
     return data
 
-
-def integrate_street_names(data, street_mapping):
+def preprocess_street_mapping(txt_path):
     """
-    Integrates street names from the collisions dataset with the bobaadr.txt mapping.
-    Updates the borough column for unknown entries based on matching street names.
+    Preprocesses bobaadr.txt into a dictionary for fast lookups.
     """
-    logging.info("Integrating street names with bobaadr.txt mapping...")
-
-    # Define a function to match street names
-    def match_borough(row):
-        if row['on_street_name'] in street_mapping:
-            return street_mapping[row['on_street_name']]
-        if row['off_street_name'] in street_mapping:
-            return street_mapping[row['off_street_name']]
-        if row['cross_street_name'] in street_mapping:
-            return street_mapping[row['cross_street_name']]
-        return row['borough']
-
-    # Apply initial matching logic
-    data['borough'] = data.apply(match_borough, axis=1)
-
-    # Handle "Unknown" boroughs iteratively
-    logging.info("Resolving 'Unknown' boroughs based on connected street names...")
-    while "Unknown" in data['borough'].values:
-        unknown_mask = data['borough'] == "Unknown"
-        for index, row in data[unknown_mask].iterrows():
-            # Find all rows with valid boroughs that share a street name
-            matching_boroughs = data[
-                (data['on_street_name'] == row['on_street_name']) |
-                (data['off_street_name'] == row['off_street_name']) |
-                (data['cross_street_name'] == row['cross_street_name'])
-            ]['borough'].unique()
-
-            # Exclude "Unknown" from matches
-            matching_boroughs = [b for b in matching_boroughs if b != "Unknown"]
-
-            # If a unique borough is found, update the "Unknown" value
-            if len(matching_boroughs) == 1:
-                data.at[index, 'borough'] = matching_boroughs[0]
-
-        # If no changes occur, break the loop
-        if not unknown_mask.any():
-            break
-
-    logging.info("Street name integration completed.")
-    return data
-
-
-def load_street_to_borough_mapping(txt_path):
-    """
-    Load and process bobaadr.txt data to create a mapping of street names to boroughs.
-    """
-    logging.info("Loading street-to-borough mapping from bobaadr.txt...")
+    logging.info("Preprocessing street mapping from bobaadr.txt...")
     data = pd.read_csv(txt_path, delimiter=',', dtype=str)
 
     # Normalize column names
     data.columns = data.columns.str.lower().str.strip()
-
-    # Ensure required columns exist
-    if 'boro' not in data.columns or 'stname' not in data.columns:
-        raise KeyError("Columns 'boro' and 'stname' are required in the file.")
 
     # Map borough codes to borough names
     borocode_to_borough = {
@@ -230,10 +178,39 @@ def load_street_to_borough_mapping(txt_path):
     }
     data['borough'] = data['boro'].map(borocode_to_borough)
 
-    # Create a mapping of street names to boroughs
+    # Create a dictionary {stname: borough}
     mapping = data.set_index('stname')['borough'].to_dict()
-    logging.info("Street-to-borough mapping loaded successfully.")
+    logging.info("Street mapping preprocessed successfully.")
     return mapping
+
+
+def integrate_street_names(data, street_mapping):
+    """
+    Optimized integration of street names with the bobaadr.txt mapping.
+    Uses hash-based lookups for faster performance and updates borough names.
+    """
+    logging.info("Integrating street names with the bobaadr.txt mapping...")
+
+    # Check for matches in on_street_name, off_street_name, and cross_street_name
+    data['on_borough'] = data['on_street_name'].map(street_mapping)
+    data['off_borough'] = data['off_street_name'].map(street_mapping)
+    data['cross_borough'] = data['cross_street_name'].map(street_mapping)
+
+    # Debugging: Check intermediate results for null boroughs
+    logging.debug(f"on_borough matches:\n{data[['on_street_name', 'on_borough']].head()}")
+    logging.debug(f"off_borough matches:\n{data[['off_street_name', 'off_borough']].head()}")
+    logging.debug(f"cross_borough matches:\n{data[['cross_street_name', 'cross_borough']].head()}")
+
+    # Prioritize on_street_name, then off_street_name, then cross_street_name
+    data['borough'] = data['borough'].where(data['borough'].notna(), data['on_borough'])
+    data['borough'] = data['borough'].where(data['borough'].notna(), data['off_borough'])
+    data['borough'] = data['borough'].where(data['borough'].notna(), data['cross_borough'])
+
+    # Drop intermediate columns
+    data.drop(columns=['on_borough', 'off_borough', 'cross_borough'], inplace=True)
+
+    logging.info("Street name integration completed.")
+    return data
 
 def parallel_download():
     """
@@ -258,7 +235,7 @@ def main():
     download_and_extract_zip(STREET_ZIP_URL, STREET_FILENAME, street_txt_path)
 
     # Load street-to-borough mapping
-    street_mapping = load_street_to_borough_mapping(street_txt_path)
+    street_mapping = preprocess_street_mapping(street_txt_path)
 
     # Clean and process collisions data
     cleaned_collisions = clean_collisions_data(collisions_data)
