@@ -165,15 +165,31 @@ def clean_population_data(data):
 
 def preprocess_street_mapping(txt_path):
     """
-    Preprocesses bobaadr.txt into a dictionary for fast lookups.
+    Reads and preprocesses the street mapping file (bobaadr.txt).
+    Standardizes street names and creates a mapping dictionary.
     """
-    logging.info("Preprocessing street mapping from bobaadr.txt...")
-    data = pd.read_csv(txt_path, delimiter=',', dtype=str)
+    logging.info("Preprocessing street mapping...")
+    street_data = pd.read_csv(txt_path, delimiter=",", dtype=str)
 
-    # Normalize column names
-    data.columns = data.columns.str.lower().str.strip()
+    # Standardize street names and boro codes
+    street_data['stname'] = street_data['stname'].str.strip().str.upper()
+    street_data['boro'] = street_data['boro'].str.strip()
 
-    # Map borough codes to borough names
+    # Create mapping dictionary: {street_name: boro_code}
+    return dict(zip(street_data['stname'], street_data['boro']))
+
+
+def integrate_street_names(data, street_mapping):
+    """
+    Detect boroughs for rows with 'Unknown' boroughs in the collisions dataset.
+    1. For rows with 'Unknown' boroughs, look at on_street_name, off_street_name, cross_street_name.
+    2. Compare these street names with the 'stname' column in bobaadr.
+    3. Use the 'boro' column from bobaadr to map to the borough name.
+    4. Replace 'Unknown' boroughs with detected borough names.
+    """
+    logging.info("Detecting boroughs for rows with 'Unknown' boroughs...")
+
+    # Define boro code to borough mapping
     borocode_to_borough = {
         "1": "Manhattan",
         "2": "Bronx",
@@ -181,41 +197,41 @@ def preprocess_street_mapping(txt_path):
         "4": "Queens",
         "5": "Staten Island"
     }
-    data['borough'] = data['boro'].map(borocode_to_borough)
 
-    # Create a dictionary {stname: borough}
-    mapping = data.set_index('stname')['borough'].to_dict()
-    logging.info("Street mapping preprocessed successfully.")
-    return mapping
+    # Filter rows with 'Unknown' borough
+    unknown_boroughs = data[data['borough'] == "Unknown"].copy()
 
+    # Standardize street names for matching
+    unknown_boroughs['on_street_name'] = unknown_boroughs['on_street_name'].str.strip().str.upper()
+    unknown_boroughs['off_street_name'] = unknown_boroughs['off_street_name'].str.strip().str.upper()
+    unknown_boroughs['cross_street_name'] = unknown_boroughs['cross_street_name'].str.strip().str.upper()
 
-def integrate_street_names(data, street_mapping):
-    """
-    Optimized integration of street names with the bobaadr.txt mapping.
-    Updates borough names and ensures no None values remain.
-    """
-    logging.info("Integrating street names with the bobaadr.txt mapping...")
+    # Street mapping standardization
+    street_mapping = {
+        k.strip().upper(): v for k, v in street_mapping.items()
+    }
 
-    # Standardize street names
-    data['on_street_name'] = data['on_street_name'].str.strip().str.upper()
-    data['off_street_name'] = data['off_street_name'].str.strip().str.upper()
-    data['cross_street_name'] = data['cross_street_name'].str.strip().str.upper()
-    street_mapping = {k.strip().upper(): v for k, v in street_mapping.items()}
+    # Helper function to detect borough
+    def find_borough(row):
+        for street_col in ['on_street_name', 'off_street_name', 'cross_street_name']:
+            street = row[street_col]
+            if street in street_mapping:
+                boro_code = street_mapping[street]
+                return borocode_to_borough.get(boro_code, "Unknown")
+        return "Unknown"
 
-    # Match on_street_name, off_street_name, and cross_street_name
-    data['on_borough'] = data['on_street_name'].map(street_mapping)
-    data['off_borough'] = data['off_street_name'].map(street_mapping)
-    data['cross_borough'] = data['cross_street_name'].map(street_mapping)
+    # Apply borough detection
+    unknown_boroughs['detected_borough'] = unknown_boroughs.apply(find_borough, axis=1)
 
-    # Prioritize on_street_name, then off_street_name, then cross_street_name
-    data['borough'] = data['borough'].where(data['borough'].notna(), data['on_borough'])
-    data['borough'] = data['borough'].where(data['borough'].notna(), data['off_borough'])
-    data['borough'] = data['borough'].where(data['borough'].notna(), data['cross_borough'])
+    # Update the original dataframe
+    data.loc[data['borough'] == "Unknown", 'borough'] = unknown_boroughs['detected_borough']
 
-    # Set any remaining None or NaN values to "Unknown"
-    data['borough'] = data['borough'].fillna("Unknown")
+    # Log remaining rows with 'Unknown' boroughs
+    remaining_unknowns = data[data['borough'] == "Unknown"]
+    logging.debug(
+        f"Remaining 'Unknown' boroughs:\n{remaining_unknowns[['on_street_name', 'off_street_name', 'cross_street_name']].head()}")
 
-    logging.info("Street name integration completed.")
+    logging.info("Borough detection completed.")
     return data
 
 def parallel_download():
