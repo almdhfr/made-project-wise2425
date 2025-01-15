@@ -19,7 +19,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: 3.12
+        python-version: 3.9
 
     - name: Install dependencies
       run: |
@@ -29,9 +29,8 @@ jobs:
     - name: Mock external data downloads
       run: |
         echo "Skipping external data downloads in test environment."
-        # Add code to mock external data files if needed
 
     - name: Run tests
       run: |
-        chmod +x tests.sh
-        ./tests.sh
+        chmod +x project/tests.sh
+        ./project/tests.sh
