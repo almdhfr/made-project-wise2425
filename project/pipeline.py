@@ -192,7 +192,7 @@ def preprocess_street_mapping(txt_path):
 def integrate_street_names(data, street_mapping):
     """
     Optimized integration of street names with the bobaadr.txt mapping.
-    Uses hash-based lookups for faster performance and updates borough names.
+    Updates borough names and ensures no None values remain.
     """
     logging.info("Integrating street names with the bobaadr.txt mapping...")
 
@@ -208,16 +208,12 @@ def integrate_street_names(data, street_mapping):
     data['cross_borough'] = data['cross_street_name'].map(street_mapping)
 
     # Prioritize on_street_name, then off_street_name, then cross_street_name
-    data['borough'] = data['borough'].where(data['borough'] != "Unknown", data['on_borough'])
-    data['borough'] = data['borough'].where(data['borough'] != "Unknown", data['off_borough'])
-    data['borough'] = data['borough'].where(data['borough'] != "Unknown", data['cross_borough'])
+    data['borough'] = data['borough'].where(data['borough'].notna(), data['on_borough'])
+    data['borough'] = data['borough'].where(data['borough'].notna(), data['off_borough'])
+    data['borough'] = data['borough'].where(data['borough'].notna(), data['cross_borough'])
 
-    # Log rows that still have 'Unknown' boroughs
-    unknown_boroughs = data[data['borough'] == "Unknown"]
-    logging.debug(f"Rows with 'Unknown' boroughs after integration:\n{unknown_boroughs[['on_street_name', 'off_street_name', 'cross_street_name']].head()}")
-
-    # Drop intermediate columns
-    data.drop(columns=['on_borough', 'off_borough', 'cross_borough'], inplace=True)
+    # Set any remaining None or NaN values to "Unknown"
+    data['borough'] = data['borough'].fillna("Unknown")
 
     logging.info("Street name integration completed.")
     return data
