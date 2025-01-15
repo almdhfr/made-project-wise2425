@@ -196,20 +196,25 @@ def integrate_street_names(data, street_mapping):
     """
     logging.info("Integrating street names with the bobaadr.txt mapping...")
 
-    # Check for matches in on_street_name, off_street_name, and cross_street_name
+    # Standardize street names
+    data['on_street_name'] = data['on_street_name'].str.strip().str.upper()
+    data['off_street_name'] = data['off_street_name'].str.strip().str.upper()
+    data['cross_street_name'] = data['cross_street_name'].str.strip().str.upper()
+    street_mapping = {k.strip().upper(): v for k, v in street_mapping.items()}
+
+    # Match on_street_name, off_street_name, and cross_street_name
     data['on_borough'] = data['on_street_name'].map(street_mapping)
     data['off_borough'] = data['off_street_name'].map(street_mapping)
     data['cross_borough'] = data['cross_street_name'].map(street_mapping)
 
-    # Debugging: Check intermediate results for null boroughs
-    logging.debug(f"on_borough matches:\n{data[['on_street_name', 'on_borough']].head()}")
-    logging.debug(f"off_borough matches:\n{data[['off_street_name', 'off_borough']].head()}")
-    logging.debug(f"cross_borough matches:\n{data[['cross_street_name', 'cross_borough']].head()}")
-
     # Prioritize on_street_name, then off_street_name, then cross_street_name
-    data['borough'] = data['borough'].where(data['borough'].notna(), data['on_borough'])
-    data['borough'] = data['borough'].where(data['borough'].notna(), data['off_borough'])
-    data['borough'] = data['borough'].where(data['borough'].notna(), data['cross_borough'])
+    data['borough'] = data['borough'].where(data['borough'] != "Unknown", data['on_borough'])
+    data['borough'] = data['borough'].where(data['borough'] != "Unknown", data['off_borough'])
+    data['borough'] = data['borough'].where(data['borough'] != "Unknown", data['cross_borough'])
+
+    # Log rows that still have 'Unknown' boroughs
+    unknown_boroughs = data[data['borough'] == "Unknown"]
+    logging.debug(f"Rows with 'Unknown' boroughs after integration:\n{unknown_boroughs[['on_street_name', 'off_street_name', 'cross_street_name']].head()}")
 
     # Drop intermediate columns
     data.drop(columns=['on_borough', 'off_borough', 'cross_borough'], inplace=True)
