@@ -1,67 +1,143 @@
 import os
-import sqlite3
 import unittest
-from pipeline import main, DATA_DIR
-
+import sqlite3
+from project.pipeline import main, DATA_DIR
 
 class TestPipeline(unittest.TestCase):
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         """
-        Prepare the environment for testing by ensuring a clean state.
+        Set up the testing environment before running tests.
         """
-        # Remove old test files
-        if os.path.exists(os.path.join(DATA_DIR, "collisions.db")):
-            os.remove(os.path.join(DATA_DIR, "collisions.db"))
-        if os.path.exists(os.path.join(DATA_DIR, "population.db")):
-            os.remove(os.path.join(DATA_DIR, "population.db"))
+        # Ensure the data directory exists
+        os.makedirs(DATA_DIR, exist_ok=True)
 
-    def test_pipeline_execution(self):
-        """
-        Test that the pipeline executes without errors and creates the expected output files.
-        """
-        main()  # Run the pipeline
+        # Remove any old database files
+        cls.collisions_db_path = os.path.join(DATA_DIR, "collisions.db")
+        cls.population_db_path = os.path.join(DATA_DIR, "population.db")
+        if os.path.exists(cls.collisions_db_path):
+            os.remove(cls.collisions_db_path)
+        if os.path.exists(cls.population_db_path):
+            os.remove(cls.population_db_path)
 
-        # Assert that the output files were created
-        collisions_path = os.path.join(DATA_DIR, "collisions.db")
-        population_path = os.path.join(DATA_DIR, "population.db")
-        self.assertTrue(os.path.exists(collisions_path), "collisions.db was not created")
-        self.assertTrue(os.path.exists(population_path), "population.db was not created")
+        # Run the pipeline
+        main()
 
-    def test_collisions_data(self):
+    def test_collisions_db_creation(self):
         """
-        Validate the contents of collisions.db.
+        Test that the collisions.db file is created.
         """
-        collisions_path = os.path.join(DATA_DIR, "collisions.db")
-        conn = sqlite3.connect(collisions_path)
+        self.assertTrue(
+            os.path.exists(self.collisions_db_path),
+            "collisions.db file was not created by the pipeline"
+        )
+
+    def test_population_db_creation(self):
+        """
+        Test that the population.db file is created.
+        """
+        self.assertTrue(
+            os.path.exists(self.population_db_path),
+            "population.db file was not created by the pipeline"
+        )
+
+    def test_collisions_table_structure(self):
+        """
+        Test that the collisions table exists and has the expected structure.
+        """
+        conn = sqlite3.connect(self.collisions_db_path)
         cursor = conn.cursor()
 
-        # Check if the table exists
+        # Check table existence
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='collisions';")
-        self.assertIsNotNone(cursor.fetchone(), "Collisions table does not exist in collisions.db")
+        self.assertIsNotNone(cursor.fetchone(), "Table 'collisions' does not exist in collisions.db")
 
-        # Check if there are no 'Unknown' boroughs
-        cursor.execute("SELECT COUNT(*) FROM collisions WHERE borough='Unknown';")
-        unknown_count = cursor.fetchone()[0]
-        self.assertEqual(unknown_count, 0, "There are rows with 'Unknown' boroughs in collisions.db")
+        # Check column existence
+        expected_columns = [
+            "borough", "on_street_name", "off_street_name", "cross_street_name",
+            "total_injuries", "total_fatalities", "vehicle_type"
+        ]
+        cursor.execute("PRAGMA table_info(collisions);")
+        columns = [info[1] for info in cursor.fetchall()]
+        for column in expected_columns:
+            self.assertIn(column, columns, f"Missing column '{column}' in 'collisions' table")
 
         conn.close()
 
-    def test_population_data(self):
+    def test_population_table_structure(self):
         """
-        Validate the contents of population.db.
+        Test that the population table exists and has the expected structure.
         """
-        population_path = os.path.join(DATA_DIR, "population.db")
-        conn = sqlite3.connect(population_path)
+        conn = sqlite3.connect(self.population_db_path)
         cursor = conn.cursor()
 
-        # Check if the table exists
+        # Check table existence
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='population';")
-        self.assertIsNotNone(cursor.fetchone(), "Population table does not exist in population.db")
+        self.assertIsNotNone(cursor.fetchone(), "Table 'population' does not exist in population.db")
 
-        # Check if total_population column has valid values
+        # Check column existence
+        expected_columns = ["borough", "total_population"]
+        cursor.execute("PRAGMA table_info(population);")
+        columns = [info[1] for info in cursor.fetchall()]
+        for column in expected_columns:
+            self.assertIn(column, columns, f"Missing column '{column}' in 'population' table")
+
+        conn.close()
+
+    def test_no_unknown_boroughs(self):
+        """
+        Test that there are no rows with 'Unknown' boroughs in the collisions table.
+        """
+        conn = sqlite3.connect(self.collisions_db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM collisions WHERE borough='Unknown';")
+        count = cursor.fetchone()[0]
+        self.assertEqual(
+            count, 0,
+            f"There are {count} rows with 'Unknown' boroughs in the collisions table"
+        )
+
+        conn.close()
+
+    def test_population_values(self):
+        """
+        Test that the total_population column has no invalid values.
+        """
+        conn = sqlite3.connect(self.population_db_path)
+        cursor = conn.cursor()
+
         cursor.execute("SELECT COUNT(*) FROM population WHERE total_population <= 0;")
-        invalid_population_count = cursor.fetchone()[0]
-        self.assertEqual(invalid_population_count, 0, "There are invalid total_population values in population.db")
+        count = cursor.fetchone()[0]
+        self.assertEqual(
+            count, 0,
+            f"There are {count} rows with invalid total_population values in the population table"
+        )
+
+        conn.close()
+
+    def test_total_injuries_and_fatalities(self):
+        """
+        Test that the total injuries and fatalities columns are correctly populated.
+        """
+        conn = sqlite3.connect(self.collisions_db_path)
+        cursor = conn.cursor()
+
+        # Check for any invalid total_injuries values
+        cursor.execute("SELECT COUNT(*) FROM collisions WHERE total_injuries < 0;")
+        injuries_count = cursor.fetchone()[0]
+        self.assertEqual(
+            injuries_count, 0,
+            f"There are {injuries_count} rows with invalid total_injuries in the collisions table"
+        )
+
+        # Check for any invalid total_fatalities values
+        cursor.execute("SELECT COUNT(*) FROM collisions WHERE total_fatalities < 0;")
+        fatalities_count = cursor.fetchone()[0]
+        self.assertEqual(
+            fatalities_count, 0,
+            f"There are {fatalities_count} rows with invalid total_fatalities in the collisions table"
+        )
 
         conn.close()
 
