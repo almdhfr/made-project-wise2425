@@ -88,6 +88,7 @@ class TestPipeline(unittest.TestCase):
             self.assertEqual(
                 count, 0,
                 f"There are {count} rows with 'Unknown' boroughs in the collisions table"
+                "These rows likely have no corresponding data in the street mapping file."
             )
 
     def test_population_values(self):
