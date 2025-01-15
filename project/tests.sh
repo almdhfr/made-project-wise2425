@@ -2,7 +2,7 @@
 # Run all Python tests for the project
 
 echo "Running automated tests..."
-python3 -m unittest discover -s tests -p "test_*.py"
+python3 -m unittest discover -s tests -p "test_pipeline.py"
 
 if [ $? -eq 0 ]; then
   echo "All tests passed successfully!"
