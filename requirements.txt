@@ -1,5 +1,4 @@
 asttokens
-attrs
 branca
 certifi
 cfgv
