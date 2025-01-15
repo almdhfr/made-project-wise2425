@@ -114,6 +114,7 @@ class TestPipeline(unittest.TestCase):
             f"There are {count} rows with 'Unknown' boroughs, but these are expected due to missing street data."
         )
 
+
     def test_population_values(self):
         """
         Test that the total_population column in population table has valid values.
