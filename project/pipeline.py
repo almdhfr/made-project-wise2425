@@ -160,6 +160,9 @@ def clean_population_data(data):
         raise KeyError("'borough' column is missing in the dataset. Cannot aggregate by borough.")
     # Rename the aggregated column to 'total_population' for clarity
     data.rename(columns={'population': 'total_population'}, inplace=True)
+     # Add a default row for 'Unknown'
+    if 'Unknown' not in data['borough'].values:
+        data = pd.concat([data, pd.DataFrame([{'borough': 'Unknown', 'population': 0}])], ignore_index=True)
     logging.info("Population data aggregated by borough.")
     return data
 
